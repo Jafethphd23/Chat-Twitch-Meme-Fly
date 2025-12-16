@@ -36,7 +36,7 @@ const PROVIDER_WORDS = [
   "inteligencia artificial", "ia", "人工知能", "인공지능", "искусственный интеллект", "人工智能",
 ];
 
-let profanityFilterEnabled = true;
+let profanityFilterEnabled = false;
 
 export function setProfanityFilter(enabled: boolean) {
   profanityFilterEnabled = enabled;

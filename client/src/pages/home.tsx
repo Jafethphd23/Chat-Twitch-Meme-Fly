@@ -22,7 +22,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connectedChannel, setConnectedChannel] = useState<string | null>(null);
-  const [profanityFilter, setProfanityFilter] = useState(true);
+  const [profanityFilter, setProfanityFilter] = useState(false);
 
   useEffect(() => {
     checkStatus();

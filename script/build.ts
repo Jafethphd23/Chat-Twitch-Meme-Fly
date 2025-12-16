@@ -59,6 +59,21 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  console.log("building bot-runner...");
+  await esbuild({
+    entryPoints: ["server/bot-runner.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/bot-runner.cjs",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    minify: true,
+    external: externals,
+    logLevel: "info",
+  });
 }
 
 buildAll().catch((err) => {
