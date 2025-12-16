@@ -93,6 +93,11 @@ export class TwitchBot {
             language: config.targetLanguage,
           },
         });
+        if (this.client && this.config) {
+          this.client.say(this.config.channel, `[もううめんどはたらくない]`).catch(err => {
+            console.error("[BOT] Failed to send !ton message:", err);
+          });
+        }
         return;
       }
 
@@ -107,6 +112,11 @@ export class TwitchBot {
             error: "Translation stopped",
           },
         });
+        if (this.client && this.config) {
+          this.client.say(this.config.channel, `[自由だーーー！]`).catch(err => {
+            console.error("[BOT] Failed to send !toff message:", err);
+          });
+        }
         return;
       }
 
@@ -216,7 +226,7 @@ export class TwitchBot {
       });
 
       if (this.client) {
-        const message = `🤖 TranslateBot is live! Messages will be translated to ${config.targetLanguage}`;
+        const message = `[ちびめめです]`;
         console.log(`[BOT] Sending connection message`);
         this.client.say(config.channel, message).catch(err => {
           console.error("[BOT] Failed to send connection message:", err);
