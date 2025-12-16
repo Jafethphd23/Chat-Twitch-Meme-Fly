@@ -54,6 +54,7 @@ interface ScriptAnalysis {
   scripts: Map<string, number>;
   dominantScript: string;
   dominantLanguage: string;
+  totalChars: number;
 }
 
 function analyzeTextScript(text: string): ScriptAnalysis {
@@ -107,7 +108,7 @@ function analyzeTextScript(text: string): ScriptAnalysis {
   else if (dominantScript === 'Cyrillic') dominantLanguage = 'ru';
   else dominantLanguage = 'unknown';
 
-  return { scripts, dominantScript, dominantLanguage };
+  return { scripts, dominantScript, dominantLanguage, totalChars };
 }
 
 // Protected names that should not be translated
@@ -177,7 +178,7 @@ export async function translateMessage(
   }
   
   // Check if message is only whitespace and punctuation (but allow Asian characters)
-  const hasValidChars = /[a-zA-Z0-9\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af\u0400-\u04ff]/u.test(text);
+  const hasValidChars = /[a-zA-Z0-9\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(text);
   if (!hasValidChars) {
     return {
       translatedText: text,
@@ -187,16 +188,57 @@ export async function translateMessage(
     };
   }
 
-  // Analyze the script of the input text
-  const scriptAnalysis = analyzeTextScript(text);
-  console.log(`[SCRIPT DETECTION] Text: "${text}", Dominant Script: ${scriptAnalysis.dominantScript}, Language: ${scriptAnalysis.dominantLanguage}`);
+  // Remove URLs from text before processing
+  const urlRegex = /https?:\/\/[^\s]+/gi;
+  const textWithoutUrls = text.replace(urlRegex, '').trim();
+  
+  if (textWithoutUrls.length < 2) {
+    return {
+      translatedText: text,
+      detectedLanguage: "unknown",
+      isTranslated: false,
+      detectedScript: "none",
+    };
+  }
+
+  // Analyze the script of the input text (without URLs)
+  const scriptAnalysis = analyzeTextScript(textWithoutUrls);
+  console.log(`[SCRIPT DETECTION] Text: "${textWithoutUrls}", Dominant Script: ${scriptAnalysis.dominantScript}, Language: ${scriptAnalysis.dominantLanguage}`);
   console.log(`[SCRIPT TABLE] ${JSON.stringify(Array.from(scriptAnalysis.scripts.entries()))}`);
 
-  try {
-    console.log(`[TRANSLATING] "${text}" to ${targetLanguage}`);
+  // Calculate percentage of Japanese characters (hiragana, katakana, kanji) against total characters
+  const japaneseChars = (scriptAnalysis.scripts.get('Hiragana') || 0) + 
+                        (scriptAnalysis.scripts.get('Katakana') || 0) + 
+                        (scriptAnalysis.scripts.get('Chinese') || 0);
+  
+  // Use total characters counted (includes digits, other ASCII but excludes spaces/punctuation)
+  const totalChars = scriptAnalysis.totalChars;
+  
+  // If more than 40% of the text is Japanese script, don't translate to Japanese
+  // Lower threshold because mixed messages (emotes, lol, etc.) are common in Twitch
+  if (totalChars > 0) {
+    const japanesePercentage = (japaneseChars / totalChars) * 100;
+    console.log(`[JAPANESE CHECK] Japanese: ${japaneseChars}, Total: ${totalChars}, Percentage: ${japanesePercentage.toFixed(1)}%`);
+    
+    // Check if message is primarily Japanese and target is Japanese
+    const isTargetJapanese = targetLanguage.toLowerCase().includes('ja') || targetLanguage.toLowerCase() === 'japanese';
+    
+    if (japanesePercentage >= 40 && isTargetJapanese) {
+      console.log(`[SKIP] Message is mostly Japanese (${japanesePercentage.toFixed(1)}%), not translating to Japanese`);
+      return {
+        translatedText: text,
+        detectedLanguage: scriptAnalysis.dominantLanguage,
+        isTranslated: false,
+        detectedScript: scriptAnalysis.dominantScript,
+      };
+    }
+  }
 
-    // Protect names from translation
-    const { text: processedText, replacements } = replaceProtectedNames(text);
+  try {
+    console.log(`[TRANSLATING] "${textWithoutUrls}" to ${targetLanguage}`);
+
+    // Protect names from translation (use text without URLs)
+    const { text: processedText, replacements } = replaceProtectedNames(textWithoutUrls);
 
     // Get target language name
     const targetLangName = LANGUAGE_NAMES[targetLanguage] || targetLanguage;
@@ -246,8 +288,8 @@ You are a TRANSLATOR, not an assistant. ONLY translate.`,
     // Apply profanity filter
     finalTranslatedText = sanitizeTranslation(finalTranslatedText);
     
-    console.log(`[API RESULT] Text changed: ${finalTranslatedText !== text}`);
-    console.log(`[TRANSLATION RESULT] "${text}" -> "${finalTranslatedText}"`);
+    console.log(`[API RESULT] Text changed: ${finalTranslatedText !== textWithoutUrls}`);
+    console.log(`[TRANSLATION RESULT] "${textWithoutUrls}" -> "${finalTranslatedText}"`);
     
     // Detect original language from script analysis
     const apiDetectedLanguage = scriptAnalysis.dominantLanguage;
@@ -258,9 +300,9 @@ You are a TRANSLATOR, not an assistant. ONLY translate.`,
     
     // Decision: should we translate?
     // Main logic: if the detected language is different from target, translate
-    const shouldTranslate = normalizedApiDetected !== normalizedTarget && finalTranslatedText !== text;
+    const shouldTranslate = normalizedApiDetected !== normalizedTarget && finalTranslatedText !== textWithoutUrls;
     
-    console.log(`[DECISION] API Detected: ${normalizedApiDetected}, Target: ${normalizedTarget}, Text changed: ${finalTranslatedText !== text}, Should Translate: ${shouldTranslate}`);
+    console.log(`[DECISION] API Detected: ${normalizedApiDetected}, Target: ${normalizedTarget}, Text changed: ${finalTranslatedText !== textWithoutUrls}, Should Translate: ${shouldTranslate}`);
 
     const translation: TranslationResult = {
       translatedText: finalTranslatedText,

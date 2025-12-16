@@ -94,7 +94,7 @@ export class TwitchBot {
           },
         });
         if (this.client && this.config) {
-          this.client.say(this.config.channel, `[もううめんどはたらくない]`).catch(err => {
+          this.client.say(this.config.channel, `もううめんどはたらくない Nagayapien`).catch(err => {
             console.error("[BOT] Failed to send !ton message:", err);
           });
         }
@@ -113,7 +113,7 @@ export class TwitchBot {
           },
         });
         if (this.client && this.config) {
-          this.client.say(this.config.channel, `[自由だーーー！]`).catch(err => {
+          this.client.say(this.config.channel, `自由だーーー！nagayaMaueeeee`).catch(err => {
             console.error("[BOT] Failed to send !toff message:", err);
           });
         }
@@ -226,7 +226,7 @@ export class TwitchBot {
       });
 
       if (this.client) {
-        const message = `[ちびめめです]`;
+        const message = `ちびめめです!!! nagayaMaabare`;
         console.log(`[BOT] Sending connection message`);
         this.client.say(config.channel, message).catch(err => {
           console.error("[BOT] Failed to send connection message:", err);
