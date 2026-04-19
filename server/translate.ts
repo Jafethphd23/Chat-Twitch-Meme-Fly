@@ -38,13 +38,17 @@ function sanitizeTranslation(text: string): string {
   return sanitized;
 }
 
-// Unicode ranges for different scripts
+// Unicode ranges for different scripts (CJK ideographs are shared by Chinese/Japanese/Korean names, etc.)
 const UNICODE_RANGES = {
   chineseKanji: { name: 'Chinese', min: 0x4e00, max: 0x9fff, code: 'zh' },
   hiragana: { name: 'Hiragana', min: 0x3040, max: 0x309f, code: 'ja' },
   katakana: { name: 'Katakana', min: 0x30a0, max: 0x30ff, code: 'ja' },
   hangul: { name: 'Hangul', min: 0xac00, max: 0xd7af, code: 'ko' },
   cyrillic: { name: 'Cyrillic', min: 0x0400, max: 0x04ff, code: 'ru' },
+  greek: { name: 'Greek', min: 0x0370, max: 0x03ff, code: 'el' },
+  hebrew: { name: 'Hebrew', min: 0x0590, max: 0x05ff, code: 'he' },
+  arabic: { name: 'Arabic', min: 0x0600, max: 0x06ff, code: 'ar' },
+  thai: { name: 'Thai', min: 0x0e00, max: 0x0e7f, code: 'th' },
   latinExtended: { name: 'Latin', min: 0x0100, max: 0x017f, code: 'latin' },
   basic: { name: 'Basic Latin', min: 0x0041, max: 0x005a, code: 'en' },
 };
@@ -82,6 +86,14 @@ function analyzeTextScript(text: string): ScriptAnalysis {
       scripts.set('Hangul', (scripts.get('Hangul') || 0) + 1);
     } else if (charCode >= UNICODE_RANGES.cyrillic.min && charCode <= UNICODE_RANGES.cyrillic.max) {
       scripts.set('Cyrillic', (scripts.get('Cyrillic') || 0) + 1);
+    } else if (charCode >= UNICODE_RANGES.greek.min && charCode <= UNICODE_RANGES.greek.max) {
+      scripts.set('Greek', (scripts.get('Greek') || 0) + 1);
+    } else if (charCode >= UNICODE_RANGES.hebrew.min && charCode <= UNICODE_RANGES.hebrew.max) {
+      scripts.set('Hebrew', (scripts.get('Hebrew') || 0) + 1);
+    } else if (charCode >= UNICODE_RANGES.arabic.min && charCode <= UNICODE_RANGES.arabic.max) {
+      scripts.set('Arabic', (scripts.get('Arabic') || 0) + 1);
+    } else if (charCode >= UNICODE_RANGES.thai.min && charCode <= UNICODE_RANGES.thai.max) {
+      scripts.set('Thai', (scripts.get('Thai') || 0) + 1);
     } else if (charCode >= UNICODE_RANGES.latinExtended.min && charCode <= UNICODE_RANGES.latinExtended.max) {
       scripts.set('Latin', (scripts.get('Latin') || 0) + 1);
     } else if ((charCode >= 0x0041 && charCode <= 0x005a) || (charCode >= 0x0061 && charCode <= 0x007a)) {
@@ -101,11 +113,15 @@ function analyzeTextScript(text: string): ScriptAnalysis {
     }
   });
 
-  // Map script to language code
+  // Map script to language code (Han alone is ambiguous; kana disambiguates toward Japanese)
   if (dominantScript === 'Chinese') dominantLanguage = 'zh';
   else if (dominantScript === 'Hiragana' || dominantScript === 'Katakana') dominantLanguage = 'ja';
   else if (dominantScript === 'Hangul') dominantLanguage = 'ko';
   else if (dominantScript === 'Cyrillic') dominantLanguage = 'ru';
+  else if (dominantScript === 'Greek') dominantLanguage = 'el';
+  else if (dominantScript === 'Hebrew') dominantLanguage = 'he';
+  else if (dominantScript === 'Arabic') dominantLanguage = 'ar';
+  else if (dominantScript === 'Thai') dominantLanguage = 'th';
   else dominantLanguage = 'unknown';
 
   return { scripts, dominantScript, dominantLanguage, totalChars };
@@ -155,6 +171,9 @@ const LANGUAGE_NAMES: { [key: string]: string } = {
   'tr': 'Turkish',
   'vi': 'Vietnamese',
   'th': 'Thai',
+  'he': 'Hebrew',
+  'ar': 'Arabic',
+  'el': 'Greek',
 };
 
 export async function translateMessage(
@@ -177,8 +196,8 @@ export async function translateMessage(
     };
   }
   
-  // Check if message is only whitespace and punctuation (but allow Asian characters)
-  const hasValidChars = /[a-zA-Z0-9\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(text);
+  // Letters/numbers from any script (Hebrew, Arabic, Greek, Thai, etc. — not covered by a hand-picked list)
+  const hasValidChars = /\p{L}|\p{N}/u.test(text);
   if (!hasValidChars) {
     return {
       translatedText: text,
@@ -206,25 +225,26 @@ export async function translateMessage(
   console.log(`[SCRIPT DETECTION] Text: "${textWithoutUrls}", Dominant Script: ${scriptAnalysis.dominantScript}, Language: ${scriptAnalysis.dominantLanguage}`);
   console.log(`[SCRIPT TABLE] ${JSON.stringify(Array.from(scriptAnalysis.scripts.entries()))}`);
 
-  // Calculate percentage of Japanese characters (hiragana, katakana, kanji) against total characters
-  const japaneseChars = (scriptAnalysis.scripts.get('Hiragana') || 0) + 
-                        (scriptAnalysis.scripts.get('Katakana') || 0) + 
-                        (scriptAnalysis.scripts.get('Chinese') || 0);
-  
-  // Use total characters counted (includes digits, other ASCII but excludes spaces/punctuation)
+  // Skip API only when text is clearly Japanese. CJK Han is shared with Chinese — do NOT count Han as Japanese here,
+  // or messages like "你好" get misclassified and skipped when the target is Japanese.
+  const kanaChars =
+    (scriptAnalysis.scripts.get('Hiragana') || 0) + (scriptAnalysis.scripts.get('Katakana') || 0);
+
   const totalChars = scriptAnalysis.totalChars;
-  
-  // If more than 40% of the text is Japanese script, don't translate to Japanese
-  // Lower threshold because mixed messages (emotes, lol, etc.) are common in Twitch
+
+  // Kana share of the message (denominator = same as scriptAnalysis: non-trivial chars excluding only space/basic punct)
   if (totalChars > 0) {
-    const japanesePercentage = (japaneseChars / totalChars) * 100;
-    console.log(`[JAPANESE CHECK] Japanese: ${japaneseChars}, Total: ${totalChars}, Percentage: ${japanesePercentage.toFixed(1)}%`);
-    
-    // Check if message is primarily Japanese and target is Japanese
-    const isTargetJapanese = targetLanguage.toLowerCase().includes('ja') || targetLanguage.toLowerCase() === 'japanese';
-    
-    if (japanesePercentage >= 40 && isTargetJapanese) {
-      console.log(`[SKIP] Message is mostly Japanese (${japanesePercentage.toFixed(1)}%), not translating to Japanese`);
+    const kanaPercentage = (kanaChars / totalChars) * 100;
+    console.log(
+      `[JAPANESE CHECK] Kana (hiragana+katakana only): ${kanaChars}, Total: ${totalChars}, Kana%: ${kanaPercentage.toFixed(1)}%`,
+    );
+
+    const isTargetJapanese =
+      targetLanguage.toLowerCase().includes('ja') || targetLanguage.toLowerCase() === 'japanese';
+
+    // ~30% kana catches typical JP mixed with emotes/Latin; kanji-only JP still hits the API (rare in chat)
+    if (kanaPercentage >= 30 && isTargetJapanese) {
+      console.log(`[SKIP] Message looks Japanese by kana ratio (${kanaPercentage.toFixed(1)}%), not translating to Japanese`);
       return {
         translatedText: text,
         detectedLanguage: scriptAnalysis.dominantLanguage,
